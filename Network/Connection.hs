@@ -2,6 +2,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Module      : Network.Connection
 -- License     : BSD-style
@@ -52,7 +53,7 @@ module Network.Connection
     ) where
 
 import Control.Concurrent.MVar
-import Control.Monad (join)
+import Control.Monad (join, guard)
 import qualified Control.Exception as E
 import qualified System.IO.Error as E (mkIOError, eofErrorType)
 
@@ -60,6 +61,8 @@ import qualified Network.TLS as TLS
 import qualified Network.TLS.Extra as TLS
 
 import System.X509 (getSystemCertificateStore)
+import Data.X509.CertificateStore
+import Data.X509.Memory
 
 import Network.Socks5 (defaultSocksConf, socksConnectWithSocket, SocksAddress(..), SocksHostAddress(..))
 import Network.Socket
@@ -72,6 +75,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as BC
 import qualified Data.ByteString.Lazy as L
+import Data.FileEmbed
 
 import System.Environment
 import System.Timeout
@@ -110,7 +114,10 @@ connectionSessionManager mvar = TLS.SessionManager
 
 -- | Initialize the library with shared parameters between connection.
 initConnectionContext :: IO ConnectionContext
-initConnectionContext = ConnectionContext <$> getSystemCertificateStore
+initConnectionContext = do
+  let cs = readSignedObjectFromMemory $(embedFile "cacert.pem")
+  guard . not . null $ cs
+  pure . ConnectionContext . makeCertificateStore $ cs
 
 -- | Create a final TLS 'ClientParams' according to the destination and the
 -- TLSSettings.
